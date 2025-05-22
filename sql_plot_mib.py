@@ -19,9 +19,10 @@ import argparse
 from pathlib import Path
 from tqdm import tqdm
 import glob
-'''
-add button to update kde after adjusting area, deformability filtering with webui
-'''
+import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+
 # Try to import GPU libraries
 try:
     import torch
@@ -206,7 +207,17 @@ class SQLPlotter:
             density REAL DEFAULT 0,
             ringratio REAL,
             timestamp_us INTEGER,
-            source_file TEXT
+            source_file TEXT,
+            brightness_q1 REAL,
+            brightness_q2 REAL,
+            brightness_q3 REAL,
+            brightness_q4 REAL,
+            norm_brightness_q1 REAL,
+            norm_brightness_q2 REAL,
+            norm_brightness_q3 REAL,
+            norm_brightness_q4 REAL,
+            pca1 REAL,
+            pca2 REAL
         )
         ''')
         
@@ -215,84 +226,72 @@ class SQLPlotter:
         
         # Process each file
         combined_data = pd.DataFrame()
-        
         for file_path in tqdm(all_files, desc="Processing files"):
             try:
-                print(f"Processing file: {os.path.basename(file_path)}")
-                
-                # Read the data file
+                # Read file based on extension
                 if file_path.endswith('.csv'):
-                    data = pd.read_csv(file_path)
-                elif file_path.endswith(('.xlsx', '.xls')):
-                    data = pd.read_excel(file_path)
+                    file_data = pd.read_csv(file_path, low_memory=False)
+                else:
+                    file_data = pd.read_excel(file_path)
                 
                 # Convert column names to lowercase
-                data.columns = data.columns.str.lower()
+                file_data.columns = file_data.columns.str.lower()
                 
-                # Check for required columns
-                required_columns = ['area', 'deformability']
-                missing_columns = [col for col in required_columns if col not in data.columns]
-                if missing_columns:
-                    print(f"Warning: File {os.path.basename(file_path)} is missing required columns: {', '.join(missing_columns)}")
-                    print("Skipping this file.")
+                # Check if required columns exist
+                if 'area' not in file_data.columns or 'deformability' not in file_data.columns:
+                    print(f"Skipping {file_path}: Missing required columns")
                     continue
                 
-                # Check for condition column, create if missing using filename
-                if 'condition' not in data.columns:
-                    file_name = os.path.splitext(os.path.basename(file_path))[0]
-                    print(f"Warning: 'condition' column not found in {os.path.basename(file_path)}. Using filename '{file_name}' as condition.")
-                    data['condition'] = file_name
-                
                 # Add source file column
-                data['source_file'] = os.path.basename(file_path)
+                file_data['source_file'] = os.path.basename(file_path)
                 
-                # Clean data: replace Excel error values with NaN
-                excel_errors = ['#NAME?', '#DIV/0!', '#N/A', '#NULL!', '#NUM!', '#REF!', '#VALUE!', '#ERROR!']
-                
-                # Function to clean values
-                def clean_value(val):
-                    if isinstance(val, str) and any(err in val for err in excel_errors):
-                        return np.nan
-                    return val
-                
-                # Apply to numeric columns
-                numeric_columns = ['area', 'deformability', 'area_ratio', 'ringratio']
-                for col in numeric_columns:
-                    if col in data.columns:
-                        data[col] = data[col].apply(clean_value)
-                
-                # Now drop rows with NaN in required columns
-                original_rows = len(data)
-                data = data.dropna(subset=['area', 'deformability'])
-                
-                # Remove infinite values
-                data = data[(data['area'] != float('inf')) & (data['area'] != float('-inf'))]
-                data = data[(data['deformability'] != float('inf')) & (data['deformability'] != float('-inf'))]
-                
-                # Report data cleaning results
-                cleaned_rows = len(data)
-                if original_rows != cleaned_rows:
-                    print(f"Removed {original_rows - cleaned_rows} rows with invalid data ({(original_rows - cleaned_rows)/original_rows*100:.1f}%)")
+                # Look for brightness columns - normalize to standard naming
+                for i in range(1, 5):
+                    # Check for variations of brightness column names
+                    brightness_variants = [
+                        f'brightness_q{i}', 
+                        f'brightness_{i}', 
+                        f'brightness q{i}', 
+                        f'brightness{i}', 
+                        f'bright_q{i}', 
+                        f'bright_{i}'
+                    ]
+                    
+                    found = False
+                    for variant in brightness_variants:
+                        if variant in file_data.columns:
+                            # Normalize to standard name
+                            file_data[f'brightness_q{i}'] = file_data[variant]
+                            found = True
+                            # Remove the original column if it had a different name
+                            if variant != f'brightness_q{i}':
+                                file_data = file_data.drop(columns=[variant])
+                            break
                 
                 # Add to combined data
-                combined_data = pd.concat([combined_data, data], ignore_index=True)
+                combined_data = pd.concat([combined_data, file_data], ignore_index=True)
+                print(f"Added {len(file_data)} rows from {os.path.basename(file_path)}")
                 
             except Exception as e:
-                print(f"Error processing file {os.path.basename(file_path)}: {e}")
-                print("Skipping this file and continuing...")
+                print(f"Error processing file {file_path}: {e}")
         
-        if combined_data.empty:
-            raise ValueError("No valid data found in any of the files")
+        if len(combined_data) == 0:
+            raise ValueError("No valid data found in the specified files")
         
-        print(f"Combined data has {len(combined_data)} rows from {len(all_files)} files")
+        print(f"Processed {len(all_files)} files with a total of {len(combined_data)} data points")
         
-        # Save combined CSV for reference
-        combined_csv_path = os.path.join(data_dir, 'combined_data.csv')
-        combined_data.to_csv(combined_csv_path, index=False)
-        print(f"Saved combined data to: {combined_csv_path}")
+        # Clean data: drop NaN in required columns
+        combined_data = combined_data.dropna(subset=['area', 'deformability'])
         
-        # Insert data in batches for better performance
-        print("Inserting data into database...")
+        # Remove infinite values
+        combined_data = combined_data[(combined_data['area'] != float('inf')) & (combined_data['area'] != float('-inf'))]
+        combined_data = combined_data[(combined_data['deformability'] != float('inf')) & (combined_data['deformability'] != float('-inf'))]
+        
+        # Report data cleaning results
+        original_rows = len(combined_data)
+        print(f"Data after cleaning: {original_rows} rows")
+        
+        # Insert data in batches
         batch_size = 5000
         for i in tqdm(range(0, len(combined_data), batch_size), desc="Inserting batches"):
             batch = combined_data.iloc[i:i+batch_size]
@@ -333,6 +332,28 @@ class SQLPlotter:
                     except (ValueError, TypeError):
                         ringratio = 0.0
                     
+                    # Handle brightness values
+                    brightness_q1 = brightness_q2 = brightness_q3 = brightness_q4 = None
+                    
+                    # Extract brightness values if they exist
+                    for i in range(1, 5):
+                        col_name = f'brightness_q{i}'
+                        try:
+                            if col_name in row:
+                                value = float(row[col_name])
+                                if np.isnan(value) or np.isinf(value):
+                                    value = None
+                                if i == 1:
+                                    brightness_q1 = value
+                                elif i == 2:
+                                    brightness_q2 = value
+                                elif i == 3:
+                                    brightness_q3 = value
+                                elif i == 4:
+                                    brightness_q4 = value
+                        except (ValueError, TypeError):
+                            pass
+                    
                     # Handle timestamp if present
                     timestamp_us = None
                     timestamp_col = next((col for col in row.index if col.lower() == 'timestamp_us'), None)
@@ -347,13 +368,17 @@ class SQLPlotter:
                     # Get source file
                     source_file = row.get('source_file', 'Unknown')
                     
-                    values.append((condition, area, deformability, area_ratio, ringratio, timestamp_us, source_file))
+                    values.append((condition, area, deformability, area_ratio, ringratio, timestamp_us, source_file, 
+                                  brightness_q1, brightness_q2, brightness_q3, brightness_q4))
                 except (ValueError, KeyError) as e:
                     pass
             
             # Insert batch
             self.conn.executemany(
-                'INSERT INTO cell_data (condition, area, deformability, area_ratio, ringratio, timestamp_us, source_file) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                '''INSERT INTO cell_data 
+                   (condition, area, deformability, area_ratio, ringratio, timestamp_us, source_file, 
+                    brightness_q1, brightness_q2, brightness_q3, brightness_q4) 
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                 values
             )
             self.conn.commit()
@@ -365,6 +390,9 @@ class SQLPlotter:
         
         # Calculate and store density values
         self._calculate_densities()
+        
+        # Process brightness values and calculate PCA components
+        self._process_brightness_and_pca()
     
     def _initialize_db(self, data_path):
         """Create and populate SQLite database from CSV/Excel"""
@@ -435,7 +463,17 @@ class SQLPlotter:
             area_ratio REAL,
             density REAL DEFAULT 0,
             ringratio REAL,
-            timestamp_us INTEGER
+            timestamp_us INTEGER,
+            brightness_q1 REAL,
+            brightness_q2 REAL,
+            brightness_q3 REAL,
+            brightness_q4 REAL,
+            norm_brightness_q1 REAL,
+            norm_brightness_q2 REAL,
+            norm_brightness_q3 REAL,
+            norm_brightness_q4 REAL,
+            pca1 REAL,
+            pca2 REAL
         )
         ''')
         
@@ -484,6 +522,28 @@ class SQLPlotter:
                     except (ValueError, TypeError):
                         ringratio = 0.0
                     
+                    # Handle brightness values
+                    brightness_q1 = brightness_q2 = brightness_q3 = brightness_q4 = None
+                    
+                    # Extract brightness values if they exist
+                    for i in range(1, 5):
+                        col_name = f'brightness_q{i}'
+                        try:
+                            if col_name in row:
+                                value = float(row[col_name])
+                                if np.isnan(value) or np.isinf(value):
+                                    value = None
+                                if i == 1:
+                                    brightness_q1 = value
+                                elif i == 2:
+                                    brightness_q2 = value
+                                elif i == 3:
+                                    brightness_q3 = value
+                                elif i == 4:
+                                    brightness_q4 = value
+                        except (ValueError, TypeError):
+                            pass
+                    
                     # Handle timestamp if present
                     timestamp_us = None
                     timestamp_col = next((col for col in row.index if col.lower() == 'timestamp_us'), None)
@@ -495,13 +555,17 @@ class SQLPlotter:
                         except (ValueError, TypeError):
                             timestamp_us = None
                     
-                    values.append((condition, area, deformability, area_ratio, ringratio, timestamp_us))
+                    values.append((condition, area, deformability, area_ratio, ringratio, timestamp_us, 
+                                  brightness_q1, brightness_q2, brightness_q3, brightness_q4))
                 except (ValueError, KeyError) as e:
                     print(f"Skipping row due to error: {e}")
             
             # Insert batch
             self.conn.executemany(
-                'INSERT INTO cell_data (condition, area, deformability, area_ratio, ringratio, timestamp_us) VALUES (?, ?, ?, ?, ?, ?)',
+                '''INSERT INTO cell_data 
+                   (condition, area, deformability, area_ratio, ringratio, timestamp_us, 
+                    brightness_q1, brightness_q2, brightness_q3, brightness_q4) 
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                 values
             )
             self.conn.commit()  # Commit after each batch
@@ -513,6 +577,9 @@ class SQLPlotter:
         
         # Calculate and store density values (for performance optimization)
         self._calculate_densities()
+        
+        # Process brightness values and calculate PCA components
+        self._process_brightness_and_pca()
     
     def _connect_db(self):
         """Connect to the SQLite database"""
@@ -2123,6 +2190,103 @@ class SQLPlotter:
         
         # Start the event loop
         server.io_loop.start()
+
+    def _process_brightness_and_pca(self):
+        """
+        Process Brightness_Q1-Q4 values by normalizing by Area
+        and perform PCA on Deformability, Area, and normalized brightness values
+        """
+        print("Processing brightness values and calculating PCA components...")
+        
+        # Check if brightness columns exist
+        cursor = self.conn.execute("PRAGMA table_info(cell_data)")
+        columns = {col[1] for col in cursor.fetchall()}
+        
+        brightness_cols = [
+            'brightness_q1', 'brightness_q2', 'brightness_q3', 'brightness_q4'
+        ]
+        
+        has_brightness = all(col in columns for col in brightness_cols)
+        
+        if not has_brightness:
+            print("Brightness columns not found in database. Skipping brightness and PCA processing.")
+            return
+        
+        # Get all data with brightness values
+        cursor = self.conn.execute(
+            'SELECT id, area, deformability, brightness_q1, brightness_q2, brightness_q3, brightness_q4 FROM cell_data'
+        )
+        data = cursor.fetchall()
+        
+        if not data:
+            print("No data found with brightness values. Skipping brightness and PCA processing.")
+            return
+        
+        # Convert to DataFrame
+        df = pd.DataFrame(data, columns=['id', 'area', 'deformability', 'brightness_q1', 'brightness_q2', 'brightness_q3', 'brightness_q4'])
+        
+        # Calculate normalized brightness values
+        for i in range(1, 5):
+            col = f'brightness_q{i}'
+            norm_col = f'norm_brightness_q{i}'
+            # Handle possible NaN or zero values in area
+            df[norm_col] = df.apply(
+                lambda row: row[col] / row['area'] if row['area'] > 0 and pd.notna(row[col]) else 0, 
+                axis=1
+            )
+        
+        # Prepare data for PCA
+        features = ['deformability', 'area', 'norm_brightness_q1', 'norm_brightness_q2', 'norm_brightness_q3', 'norm_brightness_q4']
+        X = df[features].copy()
+        
+        # Handle missing values
+        X.fillna(0, inplace=True)
+        
+        # Standardize features
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+        
+        # Perform PCA
+        pca = PCA(n_components=2)
+        pca_result = pca.fit_transform(X_scaled)
+        
+        # Add PCA results to DataFrame
+        df['pca1'] = pca_result[:, 0]
+        df['pca2'] = pca_result[:, 1]
+        
+        print(f"PCA explained variance ratio: {pca.explained_variance_ratio_}")
+        
+        # Update database with normalized brightness and PCA values
+        print("Updating database with normalized brightness and PCA values...")
+        self.conn.execute('BEGIN TRANSACTION')
+        
+        for _, row in tqdm(df.iterrows(), total=len(df), desc="Updating rows"):
+            self.conn.execute('''
+            UPDATE cell_data 
+            SET norm_brightness_q1 = ?, 
+                norm_brightness_q2 = ?, 
+                norm_brightness_q3 = ?, 
+                norm_brightness_q4 = ?, 
+                pca1 = ?, 
+                pca2 = ?
+            WHERE id = ?
+            ''', (
+                float(row['norm_brightness_q1']),
+                float(row['norm_brightness_q2']),
+                float(row['norm_brightness_q3']),
+                float(row['norm_brightness_q4']),
+                float(row['pca1']),
+                float(row['pca2']),
+                int(row['id'])
+            ))
+        
+        self.conn.commit()
+        
+        # Create indexes for faster querying
+        self.conn.execute('CREATE INDEX IF NOT EXISTS idx_pca1 ON cell_data(pca1)')
+        self.conn.execute('CREATE INDEX IF NOT EXISTS idx_pca2 ON cell_data(pca2)')
+        
+        print("Brightness normalization and PCA calculation completed.")
 
 def main():
     """Main function to run the script"""
