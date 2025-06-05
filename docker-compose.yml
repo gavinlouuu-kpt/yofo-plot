@@ -1,0 +1,71 @@
+services:
+  plot-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: plot-app
+    restart: unless-stopped
+    environment:
+      - FLASK_HOST=0.0.0.0
+      - FLASK_PORT=5000
+      - FLASK_DEBUG=false
+      - MAX_FILE_SIZE_MB=16
+      - UPLOAD_FOLDER=/app/uploads
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-4}
+      - OMP_NUM_THREADS=${OMP_NUM_THREADS:-4}
+      - MKL_NUM_THREADS=${MKL_NUM_THREADS:-4}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+
+    volumes:
+      - ./uploads:/app/uploads
+      - ./templates:/app/templates:ro
+      - ./logs:/app/logs
+    ports:
+      - "5000:5000"
+    networks:
+      - plot-network
+    # GPU support
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s  # GPU initialization takes longer
+
+  cloudflare-tunnel:
+    build:
+      context: .
+      dockerfile: Dockerfile.tunnel
+    container_name: plot-tunnel
+    restart: unless-stopped
+    depends_on:
+      plot-app:
+        condition: service_healthy
+    volumes:
+      - ./config.yml:/etc/cloudflared/config.yml:ro
+      - ~/.cloudflared:/etc/cloudflared/.cloudflared:ro
+    networks:
+      - plot-network
+    user: "1000:1000"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+networks:
+  plot-network:
+    driver: bridge
+
+volumes:
+  plot-logs:
+    driver: local

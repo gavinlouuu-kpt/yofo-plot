@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV Data Plotter</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+        }
+        .upload-container {
+            border: 2px dashed #3498db;
+            border-radius: 5px;
+            padding: 20px;
+            text-align: center;
+            margin: 20px 0;
+            background-color: #f8f9fa;
+        }
+        .btn {
+            background-color: #3498db;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .btn:hover {
+            background-color: #2980b9;
+        }
+        #file-list {
+            margin: 20px 0;
+        }
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+        }
+        .file-item:last-child {
+            border-bottom: none;
+        }
+        .remove-btn {
+            color: #e74c3c;
+            cursor: pointer;
+        }
+        #plot-container {
+            margin-top: 30px;
+            text-align: center;
+        }
+        #plot-frame {
+            width: 100%;
+            height: 600px;
+            border: 1px solid #ddd;
+            margin-top: 10px;
+        }
+        .instructions {
+            background-color: #f1f1f1;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>CSV Data Plotter</h1>
+    
+    <div class="instructions">
+        <h3>Instructions:</h3>
+        <p>Upload one or more CSV files containing cell morphology data. The files should contain columns for:</p>
+        <ul>
+            <li><strong>area</strong> - Cell size in pixels</li>
+            <li><strong>deformability</strong> - Cell deformation metric</li>
+            <li><strong>condition</strong> - (Optional) Group identifier for each file</li>
+        </ul>
+    </div>
+
+    <div class="upload-container">
+        <h2>Upload CSV Files</h2>
+        <input type="file" id="file-input" multiple accept=".csv" style="display: none;">
+        <button class="btn" onclick="document.getElementById('file-input').click()">Select Files</button>
+        <p>or drag and drop files here</p>
+        
+        <div id="file-list"></div>
+        
+        <button class="btn" id="upload-btn" disabled>Plot Data</button>
+    </div>
+
+    <div id="plot-container">
+        <h2>Data Visualization</h2>
+        <div id="status"></div>
+        <iframe id="plot-frame" src="" frameborder="0"></iframe>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('file-input');
+        const fileList = document.getElementById('file-list');
+        const uploadBtn = document.getElementById('upload-btn');
+        const plotFrame = document.getElementById('plot-frame');
+        const statusDiv = document.getElementById('status');
+        
+        let files = [];
+        
+        // Handle file selection
+        fileInput.addEventListener('change', (e) => {
+            files = Array.from(e.target.files);
+            updateFileList();
+        });
+        
+        // Handle drag and drop
+        document.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            document.querySelector('.upload-container').style.borderColor = '#27ae60';
+        });
+        
+        document.addEventListener('dragleave', () => {
+            document.querySelector('.upload-container').style.borderColor = '#3498db';
+        });
+        
+        document.addEventListener('drop', (e) => {
+            e.preventDefault();
+            document.querySelector('.upload-container').style.borderColor = '#3498db';
+            
+            const droppedFiles = Array.from(e.dataTransfer.files)
+                .filter(file => file.name.endsWith('.csv'));
+            
+            if (droppedFiles.length > 0) {
+                files = files.concat(droppedFiles);
+                updateFileList();
+            }
+        });
+        
+        // Update file list display
+        function updateFileList() {
+            fileList.innerHTML = '';
+            
+            if (files.length === 0) {
+                fileList.innerHTML = '<p>No files selected</p>';
+                uploadBtn.disabled = true;
+                return;
+            }
+            
+            files.forEach((file, index) => {
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item';
+                fileItem.innerHTML = `
+                    <span>${file.name} (${formatFileSize(file.size)})</span>
+                    <span class="remove-btn" data-index="${index}">×</span>
+                `;
+                fileList.appendChild(fileItem);
+            });
+            
+            // Add remove event listeners
+            document.querySelectorAll('.remove-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const index = parseInt(e.target.getAttribute('data-index'));
+                    files.splice(index, 1);
+                    updateFileList();
+                });
+            });
+            
+            uploadBtn.disabled = false;
+        }
+        
+        // Format file size
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        // Handle file upload and plotting
+        uploadBtn.addEventListener('click', async () => {
+            if (files.length === 0) return;
+            
+            statusDiv.innerHTML = '<p>Uploading and processing files...</p>';
+            plotFrame.src = '';
+            
+            const formData = new FormData();
+            files.forEach(file => {
+                formData.append('files', file);
+            });
+            
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result.success) {
+                        statusDiv.innerHTML = '<p>Plot generated successfully!</p>';
+                        plotFrame.src = result.plot_url;
+                    } else {
+                        statusDiv.innerHTML = `<p>Error: ${result.message}</p>`;
+                    }
+                } else {
+                    const error = await response.text();
+                    statusDiv.innerHTML = `<p>Error: ${error}</p>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<p>Error: ${error.message}</p>`;
+            }
+        });
+    </script>
+</body>
+</html>

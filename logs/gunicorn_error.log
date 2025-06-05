@@ -1,0 +1,20 @@
+[2025-06-05 06:15:02 +0000] [1] [INFO] Starting gunicorn 23.0.0
+[2025-06-05 06:15:02 +0000] [1] [INFO] Listening at: http://0.0.0.0:5000 (1)
+[2025-06-05 06:15:02 +0000] [1] [INFO] Using worker: sync
+[2025-06-05 06:15:02 +0000] [14] [INFO] Booting worker with pid: 14
+[2025-06-05 06:15:02 +0000] [15] [INFO] Booting worker with pid: 15
+[2025-06-05 06:15:02 +0000] [16] [INFO] Booting worker with pid: 16
+[2025-06-05 06:15:02 +0000] [17] [INFO] Booting worker with pid: 17
+[2025-06-05 06:19:48 +0000] [1] [INFO] Handling signal: term
+[2025-06-05 06:19:48 +0000] [15] [INFO] Worker exiting (pid: 15)
+[2025-06-05 06:19:48 +0000] [17] [INFO] Worker exiting (pid: 17)
+[2025-06-05 06:19:48 +0000] [14] [INFO] Worker exiting (pid: 14)
+[2025-06-05 06:19:48 +0000] [16] [INFO] Worker exiting (pid: 16)
+[2025-06-05 06:19:49 +0000] [1] [INFO] Shutting down: Master
+[2025-06-05 06:19:57 +0000] [1] [INFO] Starting gunicorn 23.0.0
+[2025-06-05 06:19:57 +0000] [1] [INFO] Listening at: http://0.0.0.0:5000 (1)
+[2025-06-05 06:19:57 +0000] [1] [INFO] Using worker: sync
+[2025-06-05 06:19:57 +0000] [14] [INFO] Booting worker with pid: 14
+[2025-06-05 06:19:57 +0000] [15] [INFO] Booting worker with pid: 15
+[2025-06-05 06:19:57 +0000] [16] [INFO] Booting worker with pid: 16
+[2025-06-05 06:19:57 +0000] [17] [INFO] Booting worker with pid: 17

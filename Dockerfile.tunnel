@@ -1,0 +1,7 @@
+FROM cloudflare/cloudflared:latest
+
+# Copy any tunnel configuration files
+COPY config.yml /etc/cloudflared/config.yml
+
+# Run cloudflared tunnel
+ENTRYPOINT ["cloudflared", "tunnel", "--config", "/etc/cloudflared/config.yml", "run"]

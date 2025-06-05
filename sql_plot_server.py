@@ -4,6 +4,9 @@ import argparse
 from pathlib import Path
 import pandas as pd
 import numpy as np
+from flask import Flask, request, jsonify, send_from_directory
+import tempfile
+import shutil
 
 # Import the SQLPlotter class from sql_plot_mib.py
 from sql_plot_mib import SQLPlotter, GPUAcceleratedKDE
@@ -698,7 +701,8 @@ def main():
     parser.add_argument('--data', type=str, help='Path to CSV or Excel data file')
     parser.add_argument('--dir', type=str, help='Path to directory containing multiple CSV/Excel files to combine')
     parser.add_argument('--db', type=str, help='Path to SQLite database (if data already imported)')
-    parser.add_argument('--port', type=int, default=5006, help='Port to run server on (default: 5006)')
+    parser.add_argument('--port', type=int, default=5006, help='Port for Bokeh server (default: 5006)')
+    parser.add_argument('--web-port', type=int, default=5000, help='Port for web interface (default: 5000)')
     parser.add_argument('--use-gpu', action='store_true', help='Force GPU usage for calculations')
     parser.add_argument('--no-gpu', action='store_true', help='Disable GPU acceleration')
     
@@ -724,14 +728,72 @@ def main():
         else:
             plotter = ServerSQLPlotter(data_path=args.data, db_path=args.db, use_gpu=use_gpu)
         
-        # Run in server mode with KDE recalculation
-        plotter.run_server(port=args.port)
+        # Create Flask app for web interface
+        app = Flask(__name__)
+        upload_dir = tempfile.mkdtemp()
+        
+        @app.route('/')
+        def index():
+            return send_from_directory('.', 'upload.html')
+            
+        @app.route('/upload', methods=['POST'])
+        def upload_files():
+            if 'files' not in request.files:
+                return jsonify({'success': False, 'message': 'No files uploaded'})
+                
+            files = request.files.getlist('files')
+            if not files:
+                return jsonify({'success': False, 'message': 'No files selected'})
+                
+            # Clear previous uploads
+            shutil.rmtree(upload_dir)
+            os.makedirs(upload_dir)
+            
+            # Save uploaded files
+            filenames = []
+            for file in files:
+                if file.filename.endswith('.csv'):
+                    filepath = os.path.join(upload_dir, file.filename)
+                    file.save(filepath)
+                    filenames.append(filepath)
+            
+            if not filenames:
+                return jsonify({'success': False, 'message': 'No valid CSV files'})
+            
+            # Process files and generate plot
+            try:
+                plotter.load_data(filenames)
+                plot_url = f"http://localhost:{args.port}"
+                return jsonify({
+                    'success': True,
+                    'plot_url': plot_url,
+                    'message': f'Processed {len(filenames)} files'
+                })
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'message': f'Error processing files: {str(e)}'
+                })
+        
+        # Start Bokeh server in a separate thread
+        from threading import Thread
+        bokeh_thread = Thread(target=plotter.run_server, kwargs={'port': args.port})
+        bokeh_thread.daemon = True
+        bokeh_thread.start()
+        
+        # Start Flask server
+        print(f"Web interface available at http://localhost:{args.web_port}")
+        app.run(port=args.web_port)
         
     except Exception as e:
         print(f"Error: {e}")
         import traceback
         traceback.print_exc()
+    finally:
+        # Clean up temp files
+        if os.path.exists(upload_dir):
+            shutil.rmtree(upload_dir)
 
 
 if __name__ == "__main__":
-    main() 
+    main()

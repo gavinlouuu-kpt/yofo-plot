@@ -1,0 +1,7 @@
+tunnel: 90f22dcc-f543-474e-b641-52ee67f923eb
+credentials-file: /etc/cloudflared/.cloudflared/90f22dcc-f543-474e-b641-52ee67f923eb.json
+
+ingress:
+  - hostname: plot.gavinlou.com
+    service: http://plot-app:5000
+  - service: http_status:404

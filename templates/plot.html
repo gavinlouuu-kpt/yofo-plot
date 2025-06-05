@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cell Data Visualization</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .plot-container {
+            width: 100%;
+            height: 80vh;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .back-link {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 8px 16px;
+            background-color: #f0f0f0;
+            color: #333;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+        .back-link:hover {
+            background-color: #e0e0e0;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Cell Data Visualization</h1>
+        <a href="/" class="back-link">Upload New Files</a>
+    </div>
+    
+    <div class="plot-container">
+        {{ plot_html|safe }}
+    </div>
+
+    <div class="instructions">
+        <h3>How to Use:</h3>
+        <ul>
+            <li>Use checkboxes to show/hide different conditions</li>
+            <li>Adjust sliders to filter data ranges</li>
+            <li>Hover over points to see detailed information</li>
+            <li>Use toolbar tools to pan, zoom, and save</li>
+        </ul>
+    </div>
+</body>
+</html>

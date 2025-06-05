@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CSV Data Upload</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .upload-box {
+            border: 2px dashed #ccc;
+            padding: 20px;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .upload-box.highlight {
+            border-color: #4CAF50;
+            background-color: #f8f8f8;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <h1>Upload CSV Files</h1>
+    <p>Upload one or more CSV files containing cell morphology data to visualize.</p>
+    
+    <form method="POST" enctype="multipart/form-data">
+        <div class="upload-box" id="dropArea">
+            <p>Drag & drop CSV files here or click to select</p>
+            <input type="file" name="files[]" multiple accept=".csv" id="fileInput">
+        </div>
+        <button type="submit">Upload and Visualize</button>
+    </form>
+
+    <script>
+        const dropArea = document.getElementById('dropArea');
+        const fileInput = document.getElementById('fileInput');
+
+        // Highlight drop area when files are dragged over
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight() {
+            dropArea.classList.add('highlight');
+        }
+
+        function unhighlight() {
+            dropArea.classList.remove('highlight');
+        }
+
+        // Handle dropped files
+        dropArea.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            fileInput.files = files;
+        }
+
+        // Update text when files are selected
+        fileInput.addEventListener('change', updateText);
+
+        function updateText() {
+            if (fileInput.files.length > 0) {
+                const names = Array.from(fileInput.files).map(f => f.name);
+                dropArea.innerHTML = `<p>Selected files: ${names.join(', ')}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>
